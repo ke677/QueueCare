@@ -1,0 +1,22 @@
+{
+  "name": "queuecare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Clinic appointment system and QA automation assessment",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test:api": "playwright test tests/api.spec.js",
+    "test:ui": "playwright test tests/ui.spec.js",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}
