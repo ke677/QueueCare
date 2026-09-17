@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QueueCare</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#172033;background:#f4f7fb}*{box-sizing:border-box}body{margin:0}.wrap{max-width:1000px;margin:auto;padding:32px 18px}.card{background:white;border:1px solid #e4e9f0;border-radius:14px;padding:22px;margin-bottom:18px;box-shadow:0 5px 20px #1720330d}h1,h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}label{display:block;font-weight:600;margin:12px 0 6px}input,select,textarea,button{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:9px;font:inherit}button{background:#1457d9;color:white;border:0;cursor:pointer;margin-top:12px}button.secondary{background:#64748b}button.danger{background:#c0392b}.hidden{display:none}.msg{padding:10px;border-radius:8px;margin:10px 0;background:#eef5ff}.error{background:#fff0f0;color:#a11}.ok{background:#effbf3;color:#17633a}.appt{border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:10px 0}.row{display:flex;gap:8px;align-items:center}.row button{flex:0 0 auto;width:auto}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#e8eefc}.small{color:#64748b;font-size:.9rem}@media(max-width:600px){.wrap{padding:18px 12px}.row{flex-wrap:wrap}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="card"><h1>🏥 QueueCare</h1><p class="small">Simple clinic appointment and queue management.</p></header>
+  <section id="auth" class="grid">
+    <form id="loginForm" class="card">
+      <h2>Login</h2>
+      <label for="loginEmail">Email</label><input id="loginEmail" type="email" required>
+      <label for="loginPassword">Password</label><input id="loginPassword" type="password" required>
+      <button type="submit">Login</button><div id="loginMsg" class="msg hidden"></div>
+    </form>
+    <form id="registerForm" class="card">
+      <h2>Register</h2>
+      <label for="regName">Name</label><input id="regName" required>
+      <label for="regEmail">Email</label><input id="regEmail" type="email" required>
+      <label for="regPassword">Password</label><input id="regPassword" type="password" minlength="6" required>
+      <label for="regRole">Role</label><select id="regRole"><option value="patient">Patient</option><option value="staff">Staff</option><option value="admin">Admin</option></select>
+      <button type="submit">Create account</button><div id="regMsg" class="msg hidden"></div>
+    </form>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="card row"><div><strong id="welcome"></strong><div id="role" class="small"></div></div><button id="logout" class="secondary">Logout</button></div>
+    <div class="grid">
+      <form id="appointmentForm" class="card">
+        <h2 id="formTitle">Book appointment</h2>
+        <input id="appointmentId" type="hidden">
+        <label for="date">Date</label><input id="date" type="date" required>
+        <label for="doctor">Doctor</label><input id="doctor" required placeholder="Dr. Uwase">
+        <label for="reason">Reason</label><textarea id="reason" required placeholder="Reason for visit"></textarea>
+        <button type="submit">Save appointment</button><button type="button" id="cancelEdit" class="secondary hidden">Cancel edit</button>
+        <div id="apptMsg" class="msg hidden"></div>
+      </form>
+      <div class="card"><h2>My appointments</h2><div id="appointments"></div></div>
+    </div>
+    <div id="staffPanel" class="card hidden"><h2>Today's queue</h2><div id="queue"></div></div>
+  </section>
+</div>
+<script>
+let token=localStorage.getItem('queuecare_token');let current=null;
+const $=id=>document.getElementById(id);
+function message(el,text,error=false){el.textContent=text;el.classList.remove('hidden','error','ok');el.classList.add(error?'error':'ok')}
+async function api(url,options={}){options.headers={...(options.headers||{}),...(token?{Authorization:`Bearer ${token}`}:{})};if(options.body&&!options.headers['Content-Type'])options.headers['Content-Type']='application/json';const r=await fetch(url,options);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`Request failed (${r.status})`);return data}
+async function load(){if(!token)return;try{current=await api('/api/me');$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('welcome').textContent=`Welcome, ${current.name}`;$('role').textContent=current.role;$('staffPanel').classList.toggle('hidden',current.role==='patient');await refresh()}catch{logout()}}
+async function refresh(){const items=await api('/api/appointments');$('appointments').innerHTML=items.length?items.map(a=>`<div class="appt"><b>Queue #${a.queueNumber}</b> <span class="pill">${a.status}</span><div>${a.date} · ${escapeHtml(a.doctor)}</div><div>${escapeHtml(a.reason)}</div><div class="row"><button data-edit="${a.id}">Edit</button><button data-cancel="${a.id}" class="danger">Cancel</button></div></div>`).join(''):'<p class="small">No appointments yet.</p>';$('appointments').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>edit(b.dataset.edit));$('appointments').querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>cancelAppt(b.dataset.cancel));if(current.role!=='patient'){const q=await api('/api/appointments/today');$('queue').innerHTML=q.length?q.map(a=>`<div class="appt"><b>#${a.queueNumber}</b> ${escapeHtml(a.patient?.name||'')} · ${escapeHtml(a.doctor)} <span class="pill">${a.status}</span>${a.status==='scheduled'?`<button data-serve="${a.id}">Mark served</button>`:''}</div>`).join(''):'<p class="small">No queue entries for today.</p>';$('queue').querySelectorAll('[data-serve]').forEach(b=>b.onclick=async()=>{try{await api(`/api/appointments/${b.dataset.serve}/serve`,{method:'PATCH'});await refresh()}catch(e){alert(e.message)}})}}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function logout(){token=null;current=null;localStorage.removeItem('queuecare_token');$('app').classList.add('hidden');$('auth').classList.remove('hidden')}
+function resetForm(){$('appointmentId').value='';$('formTitle').textContent='Book appointment';$('cancelEdit').classList.add('hidden');$('appointmentForm').reset();$('apptMsg').classList.add('hidden')}
+async function edit(id){const a=await api(`/api/appointments/${id}`);$('appointmentId').value=a.id;$('date').value=a.date;$('doctor').value=a.doctor;$('reason').value=a.reason;$('formTitle').textContent='Update appointment';$('cancelEdit').classList.remove('hidden');window.scrollTo({top:0,behavior:'smooth'})}
+async function cancelAppt(id){if(!confirm('Cancel this appointment?'))return;try{await api(`/api/appointments/${id}`,{method:'DELETE'});await refresh()}catch(e){alert(e.message)}}
+$('loginForm').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});token=d.token;localStorage.setItem('queuecare_token',token);await load()}catch(err){message($('loginMsg'),err.message,true)}};
+$('registerForm').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/auth/register',{method:'POST',body:JSON.stringify({name:$('regName').value,email:$('regEmail').value,password:$('regPassword').value,role:$('regRole').value})});token=d.token;localStorage.setItem('queuecare_token',token);await load()}catch(err){message($('regMsg'),err.message,true)}};
+$('appointmentForm').onsubmit=async e=>{e.preventDefault();const id=$('appointmentId').value;const body=JSON.stringify({date:$('date').value,doctor:$('doctor').value,reason:$('reason').value});try{if(id)await api(`/api/appointments/${id}`,{method:'PUT',body});else await api('/api/appointments',{method:'POST',body});message($('apptMsg'),id?'Appointment updated':'Appointment booked');resetForm();await refresh()}catch(err){message($('apptMsg'),err.message,true)}};
+$('cancelEdit').onclick=resetForm;$('logout').onclick=logout;load();
+</script>
+</body>
+</html>
